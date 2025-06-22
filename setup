@@ -110,6 +110,8 @@ sed -i "s/PROMETHEUS_CONFIG_BASIC_AUTH_PASSWORD=.*/PROMETHEUS_CONFIG_BASIC_AUTH_
 
 # Create Prometheus Basic Auth header
 prometheus_basic_auth=$(htpasswd -nbB "$prometheus_user" "$prometheus_password" | tr -d '\n')
+# Strip the username from the beginning of $prometheus_basic_auth (e.g., remove 'admin:' or any other dynamic user)
+prometheus_basic_auth=$(echo $prometheus_basic_auth | sed "s/^$prometheus_user://")
 
 # Create web.yml content
 echo -e "${GREEN}Adding Prometheus credentials to prometheus.yml${NC}"
@@ -117,15 +119,18 @@ yml_content="
 basic_auth_users:
   $prometheus_user: $prometheus_basic_auth
 "
-
-# Ensure web.yml exists, then replace or append content
-echo -e "$yml_content" > web.yml
+if [ -f web.yml ]; then
+    cp web.yml web.yml.bak
+    rm -f web.yml
+fi
+# Ensure no empty line before the content
+echo -e -n "$yml_content" > web.yml  # "-n" prevents a newline from being added at the end
 
 # Update prometheus.yml with APP_URL and JOB_NAME placeholder
 echo -e "${GREEN}Updating prometheus.yml with the provided APP_URL and dynamic JOB_NAME: $app_domain${NC}"
 
 # Replace the placeholder {{APP_URL}} and {{JOB_NAME}} in prometheus.yml
-sed -i "s|{{APP_URL}}|$app_url|g" prometheus.yml
+sed -i "s|{{APP_DOMAIN}}|$app_domain|g" prometheus.yml
 sed -i "s|{{JOB_NAME}}|$app_domain|g" prometheus.yml
 
 # Docker Compose Up

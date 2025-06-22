@@ -2,4 +2,6 @@
 .env.bak
 .env.backup
 web.yml
+web.yml.bak
+web.yml.backup
 grafana
