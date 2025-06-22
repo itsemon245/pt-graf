@@ -1,0 +1,143 @@
+#!/bin/bash
+
+# Function to check if a port is available
+is_port_available() {
+    local port=$1
+    # Using ss instead of nc for better port checking
+    if ss -tuln | grep ":$port "; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Grafana
+echo -e "${GREEN}Enter user name for Grafana [default: admin]: ${NC}"
+read grafana_user
+if [ -z "$grafana_user" ]; then
+    grafana_user="admin"
+fi
+
+echo -e "${GREEN}Enter password for Grafana [default: admin123]: ${NC}"
+read grafana_password
+if [ -z "$grafana_password" ]; then
+    grafana_password="admin123"
+fi
+
+echo -e "${GREEN}Enter port for Grafana [default: 3000]: ${NC}"
+read grafana_port
+if [ -z "$grafana_port" ]; then
+    grafana_port="3000"
+fi
+
+# Check if Grafana port is available
+if ! is_port_available $grafana_port; then
+    echo -e "${RED}Port $grafana_port is already in use.${NC}"
+    exit 1
+fi
+
+# Prometheus
+echo -e "${GREEN}Would you like to use the same credentials for Prometheus? [y/n]: ${NC}"
+read prometheus
+if [ "$prometheus" == "n" ]; then
+    echo -e "${GREEN}Enter user name for Prometheus [default: admin]: ${NC}"
+    read prometheus_user
+    if [ -z "$prometheus_user" ]; then
+        prometheus_user="admin"
+    fi
+
+    echo -e "${GREEN}Enter password for Prometheus [default: admin123]: ${NC}"
+    read prometheus_password
+    if [ -z "$prometheus_password" ]; then
+        prometheus_password="admin123"
+    fi
+else
+    prometheus_user="$grafana_user"
+    prometheus_password="$grafana_password"
+fi
+
+echo -e "${GREEN}Enter port for Prometheus [default: 9090]: ${NC}"
+read prometheus_port
+if [ -z "$prometheus_port" ]; then
+    prometheus_port="9090"
+fi
+
+# Check if Prometheus port is available
+if ! is_port_available $prometheus_port; then
+    echo -e "${RED}Port $prometheus_port is already in use.${NC}"
+    exit 1
+fi
+
+# Ask for the APP_URL
+echo -e "${GREEN}Enter the application URL (e.g., http://localhost:8080) to replace the placeholder in prometheus.yml: ${NC}"
+read app_url
+if [ -z "$app_url" ]; then
+    echo -e "${RED}Application URL cannot be empty. Exiting.${NC}"
+    exit 1
+fi
+
+# Extract job_name from the APP_URL (taking the domain part)
+app_domain=$(echo $app_url | sed -e 's#http[s]*://##' -e 's#/.*##')
+
+# If the domain is empty or cannot be extracted, fallback to a default
+if [ -z "$app_domain" ]; then
+    app_domain="default_app"
+fi
+
+# Copy .env and update Grafana credentials
+echo -e "${GREEN}Copying .env.example to .env${NC}"
+cp .env.example .env
+
+echo -e "${GREEN}Adding Grafana credentials to .env${NC}"
+sed -i "s/GF_SECURITY_ADMIN_USER=.*/GF_SECURITY_ADMIN_USER=$grafana_user/g" .env
+sed -i "s/GF_SECURITY_ADMIN_PASSWORD=.*/GF_SECURITY_ADMIN_PASSWORD=$grafana_password/g" .env
+sed -i "s/GF_PORT=.*/GF_PORT=$grafana_port/g" .env
+
+# Add Prometheus credentials to .env
+echo -e "${GREEN}Adding Prometheus credentials to .env${NC}"
+sed -i "s/PROMETHEUS_PORT=.*/PROMETHEUS_PORT=$prometheus_port/g" .env
+sed -i "s/PROMETHEUS_CONFIG_BASIC_AUTH_USERNAME=.*/PROMETHEUS_CONFIG_BASIC_AUTH_USERNAME=$prometheus_user/g" .env
+sed -i "s/PROMETHEUS_CONFIG_BASIC_AUTH_PASSWORD=.*/PROMETHEUS_CONFIG_BASIC_AUTH_PASSWORD=$prometheus_password/g" .env
+
+# Create Prometheus Basic Auth header
+prometheus_basic_auth=$(htpasswd -nbB "$prometheus_user" "$prometheus_password" | tr -d '\n')
+
+# Create web.yml content
+echo -e "${GREEN}Adding Prometheus credentials to prometheus.yml${NC}"
+yml_content="
+basic_auth_users:
+  $prometheus_user: $prometheus_basic_auth
+"
+
+# Ensure web.yml exists, then replace or append content
+echo -e "$yml_content" > web.yml
+
+# Update prometheus.yml with APP_URL and JOB_NAME placeholder
+echo -e "${GREEN}Updating prometheus.yml with the provided APP_URL and dynamic JOB_NAME: $app_domain${NC}"
+
+# Replace the placeholder {{APP_URL}} and {{JOB_NAME}} in prometheus.yml
+sed -i "s|{{APP_URL}}|$app_url|g" prometheus.yml
+sed -i "s|{{JOB_NAME}}|$app_domain|g" prometheus.yml
+
+# Docker Compose Up
+echo -e "${GREEN}Starting Docker containers with docker-compose${NC}"
+docker-compose up -d
+
+# Output credentials
+echo -e "Grafana Credentials:"
+echo -e "  Username: $grafana_user"
+echo -e "  Password: $grafana_password"
+echo -e "Prometheus Credentials:"
+echo -e "  Username: $prometheus_user"
+echo -e "  Password: $prometheus_password"
+
+echo -e "${GREEN}Setup complete!${NC}"
