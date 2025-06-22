@@ -129,6 +129,11 @@ echo -e -n "$yml_content" > web.yml  # "-n" prevents a newline from being added 
 # Update prometheus.yml with APP_URL and JOB_NAME placeholder
 echo -e "${GREEN}Updating prometheus.yml with the provided APP_URL and dynamic JOB_NAME: $app_domain${NC}"
 
+if [ -f prometheus.yml ]; then
+    cp prometheus.yml prometheus.yml.bak
+    rm -f prometheus.yml
+fi
+cp prometheus.yml.example prometheus.yml
 # Replace the placeholder {{APP_URL}} and {{JOB_NAME}} in prometheus.yml
 sed -i "s|{{APP_DOMAIN}}|$app_domain|g" prometheus.yml
 sed -i "s|{{JOB_NAME}}|$app_domain|g" prometheus.yml

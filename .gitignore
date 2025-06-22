@@ -4,4 +4,7 @@
 web.yml
 web.yml.bak
 web.yml.backup
+prometheus.yml
+prometheus.yml.bak
+prometheus.yml.backup
 grafana
